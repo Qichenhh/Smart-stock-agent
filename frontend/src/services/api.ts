@@ -52,4 +52,10 @@ export async function healthCheck() {
   return response.data
 }
 
+/** 多股票对比 */
+export async function compareStocks(symbols: string[], date_range = '3m'): Promise<any> {
+  const response = await apiClient.post('/api/stock/compare', { symbols, date_range })
+  return response.data
+}
+
 export default apiClient

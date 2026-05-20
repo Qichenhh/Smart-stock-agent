@@ -80,9 +80,14 @@
 
         <!-- 提交 -->
         <a-form-item>
-          <a-button type="primary" html-type="submit" :loading="loading" size="large" block>
-            {{ loading ? '分析中...' : '开始分析' }}
-          </a-button>
+          <a-space style="width: 100%" direction="vertical">
+            <a-button type="primary" html-type="submit" :loading="loading" size="large" block>
+              {{ loading ? '分析中...' : '开始分析' }}
+            </a-button>
+            <a-button type="dashed" @click="$router.push('/compare')" size="large" block>
+              多股票对比
+            </a-button>
+          </a-space>
         </a-form-item>
 
         <!-- 进度条 -->

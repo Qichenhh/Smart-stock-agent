@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from ..config import get_settings, validate_config, print_config
-from .routes import stock, analysis
+from .routes import stock, analysis, compare
 
 # 获取配置
 settings = get_settings()
@@ -29,6 +29,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(stock.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
+app.include_router(compare.router, prefix="/api")
 
 
 @app.on_event("startup")
