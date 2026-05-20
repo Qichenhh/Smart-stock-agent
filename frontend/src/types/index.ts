@@ -1,95 +1,137 @@
-// 类型定义
+// ============ 请求类型 ============
 
-export interface Location {
-  longitude: number
-  latitude: number
+export interface StockAnalysisRequest {
+  symbol: string
+  market: string          // A / HK / US
+  analysis_type: string   // technical / fundamental / sentiment / comprehensive
+  date_range: string      // 1m / 3m / 6m / 1y
+  free_text_input?: string
 }
 
-export interface Attraction {
+// ============ 数据模型 ============
+
+export interface StockQuote {
+  symbol: string
   name: string
-  address: string
-  location: Location
-  visit_duration: number
+  price: number
+  change: number
+  change_percent: number
+  volume: number
+  amount: number
+  high: number
+  low: number
+  open: number
+  prev_close: number
+  turnover_rate?: number
+  market_cap?: number
+}
+
+export interface TechnicalIndicator {
+  name: string
+  value: string
+  signal: 'buy' | 'sell' | 'neutral'
   description: string
-  category?: string
-  rating?: number
-  image_url?: string
-  ticket_price?: number
 }
 
-export interface Meal {
-  type: 'breakfast' | 'lunch' | 'dinner' | 'snack'
-  name: string
-  address?: string
-  location?: Location
-  description?: string
-  estimated_cost?: number
+export interface FundamentalData {
+  pe_ratio?: number
+  pb_ratio?: number
+  ps_ratio?: number
+  market_cap?: number
+  revenue?: number
+  net_profit?: number
+  eps?: number
+  roe?: number
+  roa?: number
+  gross_margin?: number
+  net_margin?: number
+  debt_ratio?: number
+  current_ratio?: number
+  revenue_growth?: number
+  profit_growth?: number
 }
 
-export interface Hotel {
-  name: string
-  address: string
-  location?: Location
-  price_range: string
-  rating: string
-  distance: string
-  type: string
-  estimated_cost?: number
+export interface SentimentItem {
+  source: string
+  title: string
+  summary: string
+  sentiment: 'positive' | 'negative' | 'neutral'
+  timestamp?: string
 }
 
-export interface Budget {
-  total_attractions: number
-  total_hotels: number
-  total_meals: number
-  total_transportation: number
-  total: number
-}
-
-export interface DayPlan {
+export interface KLineData {
   date: string
-  day_index: number
-  description: string
-  transportation: string
-  accommodation: string
-  hotel?: Hotel
-  attractions: Attraction[]
-  meals: Meal[]
+  open: number
+  close: number
+  high: number
+  low: number
+  volume: number
+  amount?: number
 }
 
-export interface WeatherInfo {
-  date: string
-  day_weather: string
-  night_weather: string
-  day_temp: number
-  night_temp: number
-  wind_direction: string
-  wind_power: string
+// ============ 分析报告 ============
+
+export interface TechnicalSection {
+  score: number
+  summary: string
+  indicators: TechnicalIndicator[]
 }
 
-export interface TripPlan {
-  city: string
-  start_date: string
-  end_date: string
-  days: DayPlan[]
-  weather_info: WeatherInfo[]
-  overall_suggestions: string
-  budget?: Budget
+export interface FundamentalSection {
+  score: number
+  summary: string
+  data: FundamentalData
 }
 
-export interface TripFormData {
-  city: string
-  start_date: string
-  end_date: string
-  travel_days: number
-  transportation: string
-  accommodation: string
-  preferences: string[]
-  free_text_input: string
+export interface SentimentSection {
+  score: number
+  summary: string
+  items: SentimentItem[]
 }
 
-export interface TripPlanResponse {
+export interface AnalysisReport {
+  symbol: string
+  company_name: string
+  market: string
+  generated_at: string
+  summary: string
+  technical_analysis: TechnicalSection
+  fundamental_analysis: FundamentalSection
+  sentiment_analysis: SentimentSection
+  overall_rating: string
+  risks: string[]
+  suggestions: string
+}
+
+// ============ 响应类型 ============
+
+export interface AnalysisResponse {
   success: boolean
   message: string
-  data?: TripPlan
+  data?: AnalysisReport
 }
 
+export interface StockQuoteResponse {
+  success: boolean
+  message: string
+  data?: StockQuote
+}
+
+export interface KLineResponse {
+  success: boolean
+  message: string
+  data?: KLineData[]
+}
+
+export interface StockSearchResult {
+  symbol: string
+  name: string
+  market: string
+  industry?: string
+}
+
+export interface StockSearchResponse {
+  success: boolean
+  message: string
+  data?: StockSearchResult[]
+}

@@ -9,23 +9,12 @@ import Result from './views/Result.vue'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    {
-      path: '/',
-      name: 'Home',
-      component: Home
-    },
-    {
-      path: '/result',
-      name: 'Result',
-      component: Result
-    }
+    { path: '/', name: 'Home', component: Home },
+    { path: '/result', name: 'Result', component: Result },
   ]
 })
 
 const app = createApp(App)
-
 app.use(router)
 app.use(Antd)
-
 app.mount('#app')
-
