@@ -1,212 +1,128 @@
-# HelloAgents智能旅行助手 🌍✈️
+# 智能股票分析助手
 
-基于HelloAgents框架构建的智能旅行规划助手,集成高德地图MCP服务,提供个性化的旅行计划生成。
+基于 HelloAgents 多 Agent 框架的 A 股智能分析系统，4 个 AI Agent 协同完成技术面 + 基本面 + 情绪面 → 综合报告。
 
-## ✨ 功能特点
+## 功能特点
 
-- 🤖 **AI驱动的旅行规划**: 基于HelloAgents框架的SimpleAgent,智能生成详细的多日旅程
-- 🗺️ **高德地图集成**: 通过MCP协议接入高德地图服务,支持景点搜索、路线规划、天气查询
-- 🧠 **智能工具调用**: Agent自动调用高德地图MCP工具,获取实时POI、路线和天气信息
-- 🎨 **现代化前端**: Vue3 + TypeScript + Vite,响应式设计,流畅的用户体验
-- 📱 **完整功能**: 包含住宿、交通、餐饮和景点游览时间推荐
+- **多 Agent 协同分析**：技术面 Agent、基本面 Agent、情绪面 Agent、综合报告 Agent 四步流水线
+- **实时数据**：baostock + akshare 双数据源自动降级，覆盖行情/K线/财务/新闻
+- **智能工具调用**：Agent 通过 `[TOOL_CALL:...]` 协议自动获取真实数据
+- **ECharts K线图**：前端 candlestick + 成交量双图，涨红跌绿
+- **新闻舆情**：东方财富个股新闻实时抓取，正负面情绪自动分类
+- **导出报告**：支持 PNG / PDF 导出分析报告
 
-## 🏗️ 技术栈
+## 技术栈
 
-### 后端
-- **框架**: HelloAgents (基于SimpleAgent)
-- **API**: FastAPI
-- **MCP工具**: amap-mcp-server (高德地图)
-- **LLM**: 支持多种LLM提供商(OpenAI, DeepSeek等)
+| 层 | 技术 |
+|----|------|
+| Agent 框架 | HelloAgents (SimpleAgent + Tool + @tool_action) |
+| LLM | DeepSeek v4-pro |
+| 后端 | FastAPI + Pydantic v2 |
+| 数据源 | baostock + akshare |
+| 前端 | Vue 3 + TypeScript + Vite + Ant Design Vue |
+| 图表 | ECharts (candlestick K线) |
+| 导出 | html2canvas + jsPDF |
 
-### 前端
-- **框架**: Vue 3 + TypeScript
-- **构建工具**: Vite
-- **UI组件库**: Ant Design Vue
-- **地图服务**: 高德地图 JavaScript API
-- **HTTP客户端**: Axios
-
-## 📁 项目结构
+## 项目结构
 
 ```
-helloagents-trip-planner/
-├── backend/                    # 后端服务
+Smart-stock-analyst/
+├── backend/
 │   ├── app/
-│   │   ├── agents/            # Agent实现
-│   │   │   └── trip_planner_agent.py
-│   │   ├── api/               # FastAPI路由
-│   │   │   ├── main.py
+│   │   ├── agents/
+│   │   │   └── stock_analyst_agent.py   # 4 Agent 系统 + StockDataTool
+│   │   ├── api/
+│   │   │   ├── main.py                  # FastAPI 应用
 │   │   │   └── routes/
-│   │   │       ├── trip.py
-│   │   │       └── map.py
-│   │   ├── services/          # 服务层
-│   │   │   ├── amap_service.py
-│   │   │   └── llm_service.py
-│   │   ├── models/            # 数据模型
-│   │   │   └── schemas.py
-│   │   └── config.py          # 配置管理
+│   │   │       ├── stock.py             # 行情/搜索/K线/缓存端点
+│   │   │       └── analysis.py          # 分析端点 (Agent 调用入口)
+│   │   ├── services/
+│   │   │   ├── stock_data_service.py    # 双数据源 + 缓存 + 财务/新闻
+│   │   │   └── llm_service.py           # LLM 单例
+│   │   ├── models/
+│   │   │   └── schemas.py               # Pydantic 数据模型
+│   │   └── config.py                    # pydantic-settings 配置
 │   ├── requirements.txt
-│   ├── .env.example
-│   └── .gitignore
-├── frontend/                   # 前端应用
+│   ├── run.py
+│   └── .env.example
+├── frontend/
 │   ├── src/
-│   │   ├── components/        # Vue组件
-│   │   ├── services/          # API服务
-│   │   ├── types/             # TypeScript类型
-│   │   └── views/             # 页面视图
+│   │   ├── views/
+│   │   │   ├── Home.vue                 # 股票查询表单 (搜索+参数)
+│   │   │   └── Result.vue              # 分析报告 (K线+评分+情绪)
+│   │   ├── services/api.ts             # Axios API 封装
+│   │   ├── types/index.ts              # TypeScript 类型定义
+│   │   ├── main.ts                     # Vue 入口 + 路由
+│   │   └── App.vue                     # 根布局
 │   ├── package.json
 │   └── vite.config.ts
 └── README.md
 ```
 
-## 🚀 快速开始
+## 快速启动
 
-### 前提条件
+### 前提
 
-- Python 3.10+
+- Python 3.10+ (conda 环境推荐)
 - Node.js 16+
-- 高德地图API密钥 (Web服务API和Web端(JS API))
-- LLM API密钥 (OpenAI/DeepSeek等)
+- DeepSeek API Key
 
-### 后端安装
+### 后端
 
-1. 进入后端目录
 ```bash
 cd backend
-```
 
-2. 创建虚拟环境
-```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-```
-
-3. 安装依赖
-```bash
+# 安装依赖
 pip install -r requirements.txt
-```
 
-4. 配置环境变量
-```bash
+# 配置 .env（参考 .env.example）
 cp .env.example .env
-# 编辑.env文件,填入你的API密钥
+# 编辑 .env: LLM_API_KEY=你的DeepSeek Key
+
+# 启动
+python run.py
+# API 文档: http://localhost:8000/docs
 ```
 
-5. 启动后端服务
-```bash
-uvicorn app.api.main:app --reload --host 0.0.0.0 --port 8000
-```
+### 前端
 
-### 前端安装
-
-1. 进入前端目录
 ```bash
 cd frontend
-```
 
-2. 安装依赖
-```bash
 npm install
-```
-
-3. 配置环境变量
-```bash
-# 创建.env文件, 填入高德地图Web API Key 和 Web端JS API Key
 cp .env.example .env
-```
 
-4. 启动开发服务器
-```bash
 npm run dev
+# 打开 http://localhost:5173
 ```
 
-5. 打开浏览器访问 `http://localhost:5173`
+## API 端点
 
-## 📝 使用指南
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/stock/analyze` | 核心：四 Agent 协同分析 |
+| GET | `/api/stock/quote/{symbol}` | 实时行情 |
+| GET | `/api/stock/history/{symbol}` | 历史K线 |
+| GET | `/api/stock/search?keyword=` | 股票搜索 |
+| GET | `/api/stock/cache` | 缓存统计 |
+| POST | `/api/stock/cache/clear` | 清空缓存 |
+| GET | `/health` | 服务健康检查 |
 
-1. 在首页填写旅行信息:
-   - 目的地城市
-   - 旅行日期和天数
-   - 交通方式偏好
-   - 住宿偏好
-   - 旅行风格标签
+## Agent 架构
 
-2. 点击"生成旅行计划"按钮
-
-3. 系统将:
-   - 调用HelloAgents Agent生成初步计划
-   - Agent自动调用高德地图MCP工具搜索景点
-   - Agent获取天气信息和路线规划
-   - 整合所有信息生成完整行程
-
-4. 查看结果:
-   - 每日详细行程
-   - 景点信息与地图标记
-   - 交通路线规划
-   - 天气预报
-   - 餐饮推荐
-
-## 🔧 核心实现
-
-### HelloAgents Agent集成
-
-```python
-from hello_agents import SimpleAgent, HelloAgentsLLM
-from hello_agents.tools import MCPTool
-
-# 创建高德地图MCP工具
-amap_tool = MCPTool(
-    name="amap",
-    server_command=["uvx", "amap-mcp-server"],
-    env={"AMAP_MAPS_API_KEY": "your_api_key"},
-    auto_expand=True
-)
-
-# 创建旅行规划Agent
-agent = SimpleAgent(
-    name="旅行规划助手",
-    llm=HelloAgentsLLM(),
-    system_prompt="你是一个专业的旅行规划助手..."
-)
-
-# 添加工具
-agent.add_tool(amap_tool)
+```
+POST /api/stock/analyze
+  │
+  ├─ Agent 1 (技术面) → stock_quote + stock_history → MACD/RSI/KDJ/均线/成交量
+  ├─ Agent 2 (基本面) → stock_quote + stock_financials → PE/PB/ROE/EPS/增长率
+  ├─ Agent 3 (情绪面) → stock_quote + stock_news → 行情信号 + 新闻正负面
+  └─ Agent 4 (综合报告) → 加权评分 → JSON 报告 (买入/持有/卖出 + 风险 + 建议)
 ```
 
-### MCP工具调用
+每个 Agent 通过 `[TOOL_CALL:tool_name:param=value]` 协议调用工具，HelloAgents 框架自动拦截并执行。
 
-Agent可以自动调用以下高德地图MCP工具:
-- `maps_text_search`: 搜索景点POI
-- `maps_weather`: 查询天气
-- `maps_direction_walking_by_address`: 步行路线规划
-- `maps_direction_driving_by_address`: 驾车路线规划
-- `maps_direction_transit_integrated_by_address`: 公共交通路线规划
+## 致谢
 
-## 📄 API文档
-
-启动后端服务后,访问 `http://localhost:8000/docs` 查看完整的API文档。
-
-主要端点:
-- `POST /api/trip/plan` - 生成旅行计划
-- `GET /api/map/poi` - 搜索POI
-- `GET /api/map/weather` - 查询天气
-- `POST /api/map/route` - 规划路线
-
-## 🤝 贡献指南
-
-欢迎提交Pull Request或Issue!
-
-## 📜 开源协议
-
-CC BY-NC-SA 4.0
-
-## 🙏 致谢
-
-- [HelloAgents](https://github.com/datawhalechina/Hello-Agents) - 智能体教程
-- [HelloAgents框架](https://github.com/jjyaoao/HelloAgents) - 智能体框架
-- [高德地图开放平台](https://lbs.amap.com/) - 地图服务
-- [amap-mcp-server](https://github.com/sugarforever/amap-mcp-server) - 高德地图MCP服务器
-
----
-
-**HelloAgents智能旅行助手** - 让旅行计划变得简单而智能 🌈
-
+- [HelloAgents](https://github.com/datawhalechina/Hello-Agents) - 智能体框架
+- [AKShare](https://github.com/akfamily/akshare) - A 股数据接口
+- [Baostock](http://baostock.com) - 证券数据

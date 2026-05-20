@@ -65,7 +65,7 @@ class StockDataTool(Tool):
             symbol: 股票代码，如 000001（平安银行）、600519（贵州茅台）
         """
         try:
-            quote = asyncio.run(self.service.get_realtime_quote(symbol))
+            quote = self.service.get_realtime_quote_sync(symbol)
             if quote is None:
                 return f"未找到股票代码 {symbol}"
             return json.dumps(quote.model_dump(), ensure_ascii=False, indent=2)
@@ -81,7 +81,7 @@ class StockDataTool(Tool):
             period: 时间范围，1m(1月)/3m(3月)/6m(6月)/1y(1年)
         """
         try:
-            klines = asyncio.run(self.service.get_history(symbol, period=period))
+            klines = self.service.get_history_sync(symbol, period=period)
             if not klines:
                 return f"未找到 {symbol} 的历史数据"
             recent = klines[-10:]
@@ -97,7 +97,7 @@ class StockDataTool(Tool):
             keyword: 搜索关键词，可以是股票名称的一部分或代码
         """
         try:
-            results = asyncio.run(self.service.search_stock(keyword))
+            results = self.service.search_stock_sync(keyword)
             if not results:
                 return f"未找到与 '{keyword}' 相关的股票"
             return json.dumps(results, ensure_ascii=False, indent=2)
@@ -112,12 +112,28 @@ class StockDataTool(Tool):
             symbol: 股票代码
         """
         try:
-            fund = asyncio.run(self.service.get_fundamentals(symbol))
+            fund = self.service.get_fundamentals_sync(symbol)
             if fund is None:
                 return f"未找到 {symbol} 的基本面数据"
             return json.dumps(fund.model_dump(), ensure_ascii=False, indent=2)
         except Exception as e:
             return f"获取基本面失败: {e}"
+
+    @tool_action("stock_news", "获取个股近期新闻，返回标题、内容、来源、情绪标签")
+    def get_news(self, symbol: str, limit: str = "10") -> str:
+        """获取个股近期新闻舆情
+
+        Args:
+            symbol: 股票代码
+            limit: 新闻条数，默认10条
+        """
+        try:
+            items = self.service.get_news_sync(symbol, limit=int(limit))
+            if not items:
+                return f"未找到 {symbol} 的近期新闻"
+            return json.dumps([i.model_dump() for i in items], ensure_ascii=False, indent=2)
+        except Exception as e:
+            return f"获取新闻失败: {e}"
 
 
 # ============================================================
@@ -129,84 +145,118 @@ TECHNICAL_AGENT_PROMPT = """你是技术面分析专家。你的任务是通过�
 **重要提示：你必须使用工具来获取数据！不要编造数据！**
 
 **工具调用格式：**
-使用 stock_quote 和 stock_history 工具时，必须严格按照以下格式：
 `[TOOL_CALL:stock_quote:symbol=股票代码]`
 `[TOOL_CALL:stock_history:symbol=股票代码,period=3m]`
 
-**示例：**
-用户: "分析000001的技术面"
-你的回复:
-[TOOL_CALL:stock_quote:symbol=000001]
-[TOOL_CALL:stock_history:symbol=000001,period=3m]
+**分析维度与评分权重（总分100）：**
+1. 价格趋势 (25分) — 短期方向(涨/跌/震荡)，处于近期高/中/低位，支撑/阻力位
+2. 量价配合 (20分) — 放量上涨=强、缩量下跌=弱、量价背离=警示
+3. 均线系统 (20分) — 多头/空头排列，股价与5/10/20日均线的关系
+4. MACD指标 (15分) — DIF与DEA的金叉/死叉，红绿柱变化趋势
+5. RSI指标 (10分) — 超买(>70)/超卖(<30)/中性区间(40-60)
+6. KDJ指标 (10分) — 超买(>80)/超卖(<20)/金叉死叉
 
-**分析维度（拿到数据后分析）：**
-1. 价格走势 — 近期涨跌趋势、振幅
-2. 成交量 — 放量/缩量，量价配合
-3. 均线 — 5日/10日/20日位置关系
-4. MACD — DIF/DEA 金叉死叉
-5. RSI — 超买超卖区间
-6. KDJ — 超买超卖信号
-7. 布林带 — 价格在带中的位置
-8. 综合信号 — 买入/卖出/中性，给出评分(0-100)
+**评分规则：**
+- 技术指标无法从OHLCV直接计算时，基于价格和成交量推断，不做精确计算
+- 综合分: 80-100=强势看多, 60-79=震荡偏多, 40-59=震荡偏空, 0-39=弱势看空
+- 必须输出至少4个指标，每个指标明确标注 signal: buy/sell/neutral
 """
 
-FUNDAMENTAL_AGENT_PROMPT = """你是基本面分析专家。你的任务是通过工具获取股票基本面数据并进行分析。
+FUNDAMENTAL_AGENT_PROMPT = """你是基本面分析专家。你的任务是通过工具获取数据并进行分析。
 
 **工具调用格式：**
 `[TOOL_CALL:stock_quote:symbol=股票代码]`
 `[TOOL_CALL:stock_financials:symbol=股票代码]`
 
-**示例：**
-用户: "分析000001的基本面"
-你的回复:
-[TOOL_CALL:stock_quote:symbol=000001]
-[TOOL_CALL:stock_financials:symbol=000001]
+**数据获取指南：**
+- stock_financials 主要返回 PE（市盈率）、PB（市净率）、市值
+- 如果某项数据为 null 或未返回，直接用现有数据推断，不要说"无法获取"
+- 银行股 PE<6 为低估，PE>10 为高估；PB<0.8 破净为低估
+- 市值>1000亿为大盘蓝筹，200-1000亿为中盘，<200亿为小盘
 
-**分析维度（拿到数据后分析）：**
-1. 估值水平 — PE/PB 与行业均值对比
-2. 市值规模 — 大盘/中盘/小盘
-3. 盈利能力 — ROE、毛利率、净利率（如有）
-4. 成长性 — 营收/利润增速（如有）
-5. 估值判断 — 低估/合理/高估
-6. 综合评分 — 0-100
+**分析维度与评分权重（总分100）：**
+1. 估值安全边际 (35分) — PE/PB 越低越安全。PE<6 得30+，PE 6-10 得20-29，PE>10 得<20
+2. 市值规模 (15分) — 大盘蓝筹流动性好，防御性强。>1000亿得满分
+3. 盈利能力推断 (20分) — 有ROE数据直接评，无数据则结合行业特点推断
+4. 行业地位 (15分) — 银行股看资产规模，消费股看品牌，科技股看研发
+5. 估值成长匹配 (15分) — 低估值+稳增长=优秀，低估值+无增长=价值陷阱
+
+**评分规则：**
+- 80-100=显著低估（PE<5或PB<0.5），60-79=合理偏低（PE 5-8），40-59=合理（PE 8-12），<40=偏高
+- 银行股默认ROE范围8-15%为正常，消费股15-25%
 """
 
-SENTIMENT_AGENT_PROMPT = """你是市场情绪分析专家。你的任务是通过工具获取数据，分析市场对这只股票的情绪。
+SENTIMENT_AGENT_PROMPT = """你是市场情绪分析专家。综合分析行情数据和新闻舆情，判断市场对这只股票的情绪。
 
 **工具调用格式：**
 `[TOOL_CALL:stock_quote:symbol=股票代码]`
+`[TOOL_CALL:stock_news:symbol=股票代码,limit=10]`
 
-**示例：**
-用户: "分析000001的市场情绪"
-你的回复:
-[TOOL_CALL:stock_quote:symbol=000001]
+**分析维度与评分权重（总分100）：**
 
-**分析维度（拿到数据后分析）：**
-1. 涨跌信号 — 当前涨跌幅反映的短期情绪
-2. 成交量情绪 — 放量上涨(积极)/放量下跌(恐慌)/缩量(观望)
-3. 换手率 — 市场活跃度
-4. 技术位置 — 相对高低位判断市场态度
-5. 风险提示 — 需要注意的负面信号
-6. 情绪评分 — 0-100 (乐观/中性/悲观)
+A. 行情信号 (50分) — 来自 stock_quote：
+1. 涨跌幅 (20分) — 涨>3%=积极(15-20)，涨0-3%=中性偏正(10-14)，跌0-3%=中性偏负(5-9)，跌>3%=消极(0-4)
+2. 成交量 (15分) — 放量上涨=积极，放量下跌=恐慌，缩量上涨=谨慎，缩量下跌=观望
+3. 换手率 (15分) — 换手>2%=活跃，0.5-2%=正常，<0.5%=冷清（银行股<0.3%正常）
+
+B. 新闻信号 (50分) — 来自 stock_news：
+4. 情绪统计 (25分) — 统计 positive/negative/neutral 新闻条数。正面多=高分，负面多=低分
+5. 关键事件 (25分) — 从新闻中提取重大事件并评估影响：
+   - 利好：业绩大增、分红、回购、增持、政策支持
+   - 利空：亏损、减持、监管处罚、资产质量问题、诉讼
+   - 每条利好+5~10分，每条利空-5~10分，重要事件加减更多
+
+**输出要求：**
+- 至少输出2条情绪条目，其中至少1条来源于"新闻事件"（source="新闻事件"）
+- 行情条目 source="市场数据"，新闻条目 source="新闻事件"
+- 情绪评分: 80-100=乐观，60-79=中性偏正，40-59=中性偏负，0-39=悲观
 """
 
-REPORT_AGENT_PROMPT = """你是综合报告专家。你的任务是整合技术面、基本面、情绪面的分析结果，生成完整的综合分析报告。
+REPORT_AGENT_PROMPT = """你是综合报告专家。将技术面、基本面、情绪面的分析结果整合为完整的综合分析报告。
 
-**重要：你不需要调用任何工具！** 你的输入是前三步的分析结果。
+**重要：你不需要调用任何工具！直接从输入中提取信息。**
 
-**请严格按照以下JSON格式返回分析报告：**
+**综合评级计算规则（严格按此公式）：**
+```
+加权总分 = 技术面*0.4 + 基本面*0.35 + 情绪面*0.25
+
+总体评级:
+  >= 75  → "买入"   (强烈推荐)
+  60-74 → "持有"    (观望/轻仓)
+  < 60  → "卖出"    (减仓/回避)
+```
+
+**摘要编写规则：**
+- 第一句：核心结论（买入/持有/卖出 + 核心原因）
+- 中间：三个维度的关键发现（各一句话）
+- 最后：操作方向建议
+- 控制在 250 字以内
+
+**风险提示规则：**
+- 技术面风险：至少1条（破位、趋势恶化等）
+- 基本面风险：至少1条（估值陷阱、业绩下滑等）
+- 情绪面风险：至少1条（流动性差、利好出尽等）
+- 共 3-5 条，每条 20 字以内，具体可操作
+
+**操作建议规则：**
+- 买入：明确买入区间、仓位建议、止损位
+- 持有：说明持有多久、加仓条件、减仓条件
+- 卖出：明确卖出价位或触发条件
+- 150 字以内
+
+**请严格按照以下JSON格式返回：**
 ```json
 {
   "symbol": "股票代码",
   "company_name": "公司名称",
   "market": "A",
-  "generated_at": "生成时间",
-  "summary": "200字以内的综合摘要，包含核心结论",
+  "generated_at": "当前日期",
+  "summary": "综合摘要",
   "technical_analysis": {
     "score": 0,
-    "summary": "技术面分析总结",
+    "summary": "技术面总结",
     "indicators": [
-      {"name": "价格走势", "value": "...", "signal": "buy/sell/neutral", "description": "..."},
+      {"name": "价格走势", "value": "具体数值/描述", "signal": "buy/sell/neutral", "description": "简明解读"},
       {"name": "成交量", "value": "...", "signal": "buy/sell/neutral", "description": "..."},
       {"name": "MACD", "value": "...", "signal": "buy/sell/neutral", "description": "..."},
       {"name": "RSI", "value": "...", "signal": "buy/sell/neutral", "description": "..."}
@@ -214,37 +264,29 @@ REPORT_AGENT_PROMPT = """你是综合报告专家。你的任务是整合技术�
   },
   "fundamental_analysis": {
     "score": 0,
-    "summary": "基本面分析总结",
-    "data": {
-      "pe_ratio": null,
-      "pb_ratio": null,
-      "market_cap": null
-    }
+    "summary": "基本面总结",
+    "data": { "pe_ratio": 数值或null, "pb_ratio": 数值或null, "market_cap": 数值或null }
   },
   "sentiment_analysis": {
     "score": 0,
-    "summary": "情绪面分析总结",
+    "summary": "情绪面总结",
     "items": [
-      {"source": "市场数据", "title": "...", "summary": "...", "sentiment": "positive/negative/neutral"}
+      {"source": "市场数据", "title": "...", "summary": "...", "sentiment": "positive/negative/neutral"},
+      {"source": "新闻事件", "title": "...", "summary": "...", "sentiment": "positive/negative/neutral"}
     ]
   },
   "overall_rating": "买入/持有/卖出",
-  "risks": ["风险1", "风险2"],
-  "suggestions": "操作建议，100字以内"
+  "risks": ["风险1", "风险2", "风险3"],
+  "suggestions": "操作建议"
 }
 ```
 
-**评分规则：**
-- 技术面评分 0-100（基于多指标综合判断）
-- 基本面评分 0-100（基于估值和财务健康度）
-- 情绪面评分 0-100（基于市场情绪综合判断）
-- 综合评级：>=80"买入"、60-79"持有"、<60"卖出"
-
 **注意：**
-1. 必须包含至少4个技术指标
-2. 必须包含至少2条情绪条目
-3. 必须列出至少2条风险提示
-4. 数据中有的数值直接填，没有的填 null
+1. 技术指标至少4个，每个 signal 必须明确标注
+2. 情绪条目至少2个，必须同时包含"市场数据"和"新闻事件"来源
+3. 风险提示至少3条，覆盖技术面/基本面/情绪面
+4. 数值为 null 时不要编造，保持 null
+5. 各维度 score 必须是 0-100 的整数
 """
 
 
@@ -398,7 +440,8 @@ class MultiAgentStockAnalyst:
         """构造情绪面查询"""
         return (
             f"请分析股票 {request.symbol} 的市场情绪。\n"
-            f"[TOOL_CALL:stock_quote:symbol={request.symbol}]"
+            f"[TOOL_CALL:stock_quote:symbol={request.symbol}]\n"
+            f"[TOOL_CALL:stock_news:symbol={request.symbol},limit=10]"
         )
 
     def _build_report_query(self, request: StockAnalysisRequest,

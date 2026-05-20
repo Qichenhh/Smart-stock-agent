@@ -7,7 +7,7 @@ from ...models.schemas import (
     StockSearchResponse,
     ErrorResponse,
 )
-from ...services.stock_data_service import get_stock_data_service
+from ...services.stock_data_service import get_stock_data_service, _cache
 
 router = APIRouter(prefix="/stock", tags=["股票数据"])
 
@@ -138,3 +138,31 @@ async def health_check():
             status_code=503,
             detail=f"服务不可用: {str(e)}"
         )
+
+
+@router.get(
+    "/cache",
+    summary="缓存状态",
+    description="查看当前缓存的条目数、命中率、设置次数等统计信息"
+)
+async def cache_stats():
+    """缓存统计"""
+    stats = _cache.stats()
+    return {
+        "success": True,
+        "data": stats
+    }
+
+
+@router.post(
+    "/cache/clear",
+    summary="清空缓存",
+    description="清除所有缓存数据（行情、K线、搜索、基本面、新闻）"
+)
+async def cache_clear():
+    """清空缓存"""
+    count = _cache.clear()
+    return {
+        "success": True,
+        "message": f"已清除 {count} 条缓存"
+    }

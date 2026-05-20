@@ -7,12 +7,22 @@
     </div>
 
     <template v-else>
+      <div ref="contentRef">
       <div class="result-header">
         <a-button class="back-btn" @click="$router.push('/')">← 返回</a-button>
         <div class="header-main">
           <h2>{{ report.company_name }}</h2>
           <span class="symbol-tag">{{ report.symbol }} · {{ report.market === 'A' ? 'A股' : '港股' }}</span>
         </div>
+        <a-dropdown>
+          <a-button type="default">导出报告</a-button>
+          <template #overlay>
+            <a-menu>
+              <a-menu-item key="png" @click="exportPNG">导出为图片</a-menu-item>
+              <a-menu-item key="pdf" @click="exportPDF">导出为PDF</a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
         <a-tag :color="ratingColor(report.overall_rating)" style="font-size: 18px; padding: 4px 16px">
           {{ report.overall_rating }}
         </a-tag>
@@ -106,18 +116,23 @@
           </a-card>
         </a-col>
       </a-row>
+    </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
+import { message } from 'ant-design-vue'
 import * as echarts from 'echarts'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 import { getStockHistory } from '@/services/api'
 import type { AnalysisReport, KLineData } from '@/types'
 
 const report = ref<AnalysisReport | null>(null)
 const chartRef = ref<HTMLElement | null>(null)
+const contentRef = ref<HTMLElement | null>(null)
 let chartInstance: any = null
 
 onMounted(async () => {
@@ -216,6 +231,62 @@ function scoreColor(score: number) {
   if (score >= 70) return '#3f8600'
   if (score >= 40) return '#faad14'
   return '#cf1322'
+}
+
+// ========== 导出功能 ==========
+
+async function captureCanvas(): Promise<HTMLCanvasElement | null> {
+  if (!contentRef.value) return null
+  try {
+    return await html2canvas(contentRef.value, {
+      scale: 2,                       // 2x 清晰度
+      useCORS: true,
+      backgroundColor: '#f5f5f5',
+      logging: false,
+    })
+  } catch (e) {
+    console.error('截图失败:', e)
+    return null
+  }
+}
+
+async function exportPNG() {
+  const canvas = await captureCanvas()
+  if (!canvas) { message.error('导出失败'); return }
+
+  const link = document.createElement('a')
+  link.download = `${report.value?.symbol}_${report.value?.company_name}_分析报告.png`
+  link.href = canvas.toDataURL('image/png')
+  link.click()
+  message.success('PNG 导出完成')
+}
+
+async function exportPDF() {
+  const canvas = await captureCanvas()
+  if (!canvas) { message.error('导出失败'); return }
+
+  const imgData = canvas.toDataURL('image/png')
+  const imgWidth = 210  // A4 宽 mm
+  const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+  const pdf = new jsPDF('p', 'mm', 'a4')
+  let heightLeft = imgHeight
+  let position = 0
+
+  // 首页
+  pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+  heightLeft -= 297  // A4 高 mm
+
+  // 多页
+  while (heightLeft > 0) {
+    position = -(297 * pdf.getNumberOfPages())
+    pdf.addPage()
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+    heightLeft -= 297
+  }
+
+  pdf.save(`${report.value?.symbol}_${report.value?.company_name}_分析报告.pdf`)
+  message.success('PDF 导出完成')
 }
 </script>
 
