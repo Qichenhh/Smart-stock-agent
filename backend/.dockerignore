@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.git
+.gitignore
+.env  (use .env.example instead, mount real .env at runtime)
+venv/
+env/
+.venv
+*.log

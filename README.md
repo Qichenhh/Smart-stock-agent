@@ -96,6 +96,20 @@ npm run dev
 # 打开 http://localhost:5173
 ```
 
+### Docker 一键部署
+
+```bash
+# 1. 配置后端环境变量
+cp backend/.env.example backend/.env
+# 编辑 backend/.env 填入你的 LLM_API_KEY
+
+# 2. 构建并启动
+docker compose up -d
+
+# 访问 http://localhost (前端)
+# 访问 http://localhost:8000/docs (API文档)
+```
+
 ## API 端点
 
 | 方法 | 路径 | 说明 |
