@@ -451,27 +451,8 @@ class StockDataService:
         else:
             result = FundamentalData(pe_ratio=15.0, pb_ratio=2.5, market_cap=500)
 
-        # 2. 深度财务数据（akshare 财务 API 独立，baostock 模式下也尝试）
-        if result:
-            try:
-                import akshare as ak
-                df_fin = ak.stock_financial_analysis_indicator(symbol=symbol, start_year='2024')
-                annual = df_fin[df_fin.iloc[:, 0].astype(str).str.contains('12-31', na=False)]
-                if not annual.empty:
-                    annual = annual.iloc[-1]
-                else:
-                    annual = df_fin.iloc[-1]
-
-                result.eps = _safe_float(annual.iloc[1])
-                result.roe = _safe_float(annual.iloc[11])
-                result.net_margin = _safe_float(annual.iloc[17])
-                result.gross_margin = _safe_float(annual.iloc[21])
-                result.revenue_growth = _safe_float(annual.iloc[31])
-                result.profit_growth = _safe_float(annual.iloc[32])
-                result.current_ratio = _safe_float(annual.iloc[45])
-                result.debt_ratio = _safe_float(annual.iloc[61])
-            except Exception as e:
-                print(f"[FinData] 深度财务指标获取失败(非关键): {e}")
+        # 2. 深度财务数据（暂时关闭——akshare API 返回值类型不稳定）
+        # TODO: 修复 akshare stock_financial_analysis_indicator 的字符串处理
 
         if result:
             _cache.set(cache_key, result, ttl=600)  # 基本面10分钟

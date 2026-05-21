@@ -9,6 +9,8 @@ from hello_agents.tools import Tool, ToolParameter
 from hello_agents.tools.base import tool_action
 from ..services.llm_service import get_llm
 from ..services.stock_data_service import get_stock_data_service
+from ..services.memory_service import record_analysis, get_context
+from ..services.rag_service import get_rag_tool, search_knowledge, is_ready as rag_ready
 from ..models.schemas import (
     StockAnalysisRequest, AnalysisReport,
     TechnicalSection, FundamentalSection, SentimentSection,
@@ -214,7 +216,19 @@ B. 新闻信号 (50分) — 来自 stock_news：
 
 REPORT_AGENT_PROMPT = """你是综合报告专家。将技术面、基本面、情绪面的分析结果整合为完整的综合分析报告。
 
-**重要：你不需要调用任何工具！直接从输入中提取信息。**
+**可用工具：**
+1. memory_search — 搜索历史分析记录，获取跨会话上下文
+   格式: [TOOL_CALL:memory_search:query=股票代码+分析类型,limit=3]
+   示例: [TOOL_CALL:memory_search:query=000001历史分析,limit=3]
+   返回: 之前对该股票的分析摘要、评分、结论
+
+2. memory_add — 记录本次分析结果，供未来参考
+   格式: [TOOL_CALL:memory_add:content=分析摘要,memory_type=semantic,importance=0.8]
+
+**memory_search 搜索提示：**
+- 首次分析某股票时，搜索返回空，正常生成报告即可
+- 如果找到历史分析，在摘要中引用: "对比上次分析(日期)，当前价格X元，上次Y元，变化Z%"
+- 如果发现用户偏好（如"关注北向资金"），在分析中优先体现
 
 **综合评级计算规则（严格按此公式）：**
 ```
@@ -310,11 +324,15 @@ class MultiAgentStockAnalyst:
         try:
             self.llm = get_llm()
 
-            # 创建共享工具（只创建一个实例，4个Agent共享）
+            # 创建共享工具
             print("  - 创建股票数据工具...")
             self.stock_tool = StockDataTool()
 
-            # Agent 1: 技术面
+            # 初始化 RAG 服务（Memory 用轻量 JSON 文件，不需要初始化）
+            print("  - 初始化 RAG 知识库...")
+            self.rag_tool = get_rag_tool()
+
+            # Agent 1: 技术面（只用股票数据工具）
             print("  - 创建技术面分析Agent...")
             self.technical_agent = SimpleAgent(
                 name="技术面分析专家",
@@ -341,19 +359,24 @@ class MultiAgentStockAnalyst:
             )
             self.sentiment_agent.add_tool(self.stock_tool)
 
-            # Agent 4: 综合报告（不需要工具——和旅行助手的规划 Agent 一样）
+            # Agent 4: 综合报告（股票数据 + 记忆 + RAG）
             print("  - 创建综合报告Agent...")
             self.report_agent = SimpleAgent(
                 name="综合报告专家",
                 llm=self.llm,
                 system_prompt=REPORT_AGENT_PROMPT
             )
+            if self.rag_tool:
+                self.report_agent.add_tool(self.rag_tool)
 
+            tool_count = len(self.report_agent.list_tools())
+            rag_ok = "rag" if self.rag_tool else "no-rag"
             print(f"[Agent] 多Agent系统初始化成功")
             print(f"   技术面Agent: {len(self.technical_agent.list_tools())} 个工具")
             print(f"   基本面Agent: {len(self.fundamental_agent.list_tools())} 个工具")
             print(f"   情绪面Agent: {len(self.sentiment_agent.list_tools())} 个工具")
-            print(f"   报告Agent: {len(self.report_agent.list_tools())} 个工具（应为0）")
+            print(f"   报告Agent: {tool_count} 个工具 (stock + {rag_ok})")
+            print(f"   Memory: 轻量 JSON 文件存储")
 
         except Exception as e:
             print(f"[Agent] 初始化失败: {e}")
@@ -410,6 +433,18 @@ class MultiAgentStockAnalyst:
             print(f"[Done] 分析完成! 评级: {report.overall_rating}")
             print(f"{'='*60}\n")
 
+            # 自动记录到长期记忆（代码层兜底）
+            record_analysis(
+                symbol=report.symbol,
+                company_name=report.company_name,
+                summary=report.summary,
+                tech_score=report.technical_analysis.score,
+                fund_score=report.fundamental_analysis.score,
+                senti_score=report.sentiment_analysis.score,
+                rating=report.overall_rating
+            )
+            print("[Memory] 分析结果已记录到长期记忆")
+
             return report
 
         except Exception as e:
@@ -446,9 +481,31 @@ class MultiAgentStockAnalyst:
 
     def _build_report_query(self, request: StockAnalysisRequest,
                             tech: str, funda: str, senti: str) -> str:
-        """构造综合报告查询——把前三步结果喂给报告 Agent"""
-        query = f"""请根据以下三份分析结果，生成 {request.symbol} 的综合分析报告。
+        """构造综合报告查询——注入 Memory 上下文 + RAG 行业知识 + 三份分析"""
+        mem_context = ""
+        rag_context = ""
 
+        # 代码层预检索历史记忆（不占用 Agent token）
+        mem_context = get_context(request.symbol, limit=3)
+
+        # 代码层检索 RAG 金融知识库
+        if rag_ready():
+            industry_query = f"{request.symbol} 行业 估值 PE PB ROE"
+            rag_context = search_knowledge(industry_query, namespace="industry", limit=3, max_chars=600)
+
+        # 构建 Memory 提示段
+        mem_section = ""
+        if mem_context:
+            mem_section = f"\n**历史记忆（对比参考）：**\n{mem_context}\n"
+
+        # 构建 RAG 知识段
+        rag_section = ""
+        if rag_context:
+            rag_section = f"\n**金融知识库（行业参照）：**\n{rag_context}\n"
+
+        query = f"""请根据以下信息生成 {request.symbol} 的综合分析报告。
+
+{mem_section}{rag_section}
 **技术面分析结果：**
 {tech}
 
@@ -460,6 +517,14 @@ class MultiAgentStockAnalyst:
 
 **用户额外要求：**
 {request.free_text_input if request.free_text_input else '无'}
+
+---
+**执行步骤：**
+1. 对比历史记忆: 如果有历史分析，说明评分/价格变化趋势
+2. 引用知识库: 如果提供了行业参照数据，用行业均值做对比基准
+3. 整合三份分析，加权计算: 技术面×0.4 + 基本面×0.35 + 情绪面×0.25
+4. 生成 JSON 报告
+5. 调用 [TOOL_CALL:memory_add:content=本次{request.symbol}分析摘要(含评分和评级),memory_type=semantic,importance=0.8] 记录
 
 请严格按照 JSON Schema 返回完整的分析报告。"""
         return query

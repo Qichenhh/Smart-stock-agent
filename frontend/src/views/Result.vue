@@ -126,7 +126,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
 import * as echarts from 'echarts'
 import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
+import { jsPDF } from 'jspdf'
 import { getStockHistory } from '@/services/api'
 import type { AnalysisReport, KLineData } from '@/types'
 
@@ -136,13 +136,27 @@ const contentRef = ref<HTMLElement | null>(null)
 let chartInstance: any = null
 
 onMounted(async () => {
-  const raw = sessionStorage.getItem('analysisReport')
-  if (raw) {
-    try { report.value = JSON.parse(raw) } catch { /* ignore */ }
+  try {
+    const raw = sessionStorage.getItem('analysisReport')
+    console.log('[Result] sessionStorage data:', raw ? `${raw.length} chars` : 'EMPTY')
+    if (raw) {
+      try {
+        report.value = JSON.parse(raw)
+        console.log('[Result] report loaded:', report.value?.company_name)
+      } catch (e) { console.error('[Result] JSON parse error:', e) }
+    }
+  } catch (e) {
+    console.error('[Result] onMounted error:', e)
   }
   if (report.value) {
     await nextTick()
-    await loadChart()
+    // 等 DOM 布局完成再初始化图表（v-else 切换需要布局计算）
+    await new Promise(r => setTimeout(r, 200))
+    try {
+      await loadChart()
+    } catch (e) {
+      console.error('[Result] chart error:', e)
+    }
   }
 })
 
