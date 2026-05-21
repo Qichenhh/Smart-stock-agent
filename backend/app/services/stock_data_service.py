@@ -662,6 +662,49 @@ class StockDataService:
         return result[0]
 
 
+    # ========== 板块热度 ==========
+
+    async def get_sectors(self) -> list:
+        """获取A股行业板块热度排行（同花顺数据）"""
+        cache_key = "sectors_heat"
+        cached = _cache.get(cache_key)
+        if cached:
+            return cached
+
+        try:
+            import akshare as ak
+            df = ak.stock_board_industry_summary_ths()
+
+            sectors = []
+            for _, row in df.iterrows():
+                name = str(row.iloc[1])          # 板块名称
+                change_pct = _safe_float(row.iloc[2])  # 涨跌幅
+                volume = _safe_float(row.iloc[3])      # 总成交量
+                amount = _safe_float(row.iloc[4])       # 总成交额
+                up_count = int(row.iloc[6]) if row.iloc[6] else 0    # 上涨家数
+                down_count = int(row.iloc[7]) if row.iloc[7] else 0  # 下跌家数
+
+                sectors.append({
+                    "name": name,
+                    "change_pct": round(change_pct, 2) if change_pct else 0,
+                    "volume": int(volume) if volume else 0,
+                    "amount": int(amount) if amount else 0,
+                    "up_count": up_count,
+                    "down_count": down_count,
+                    "total_count": up_count + down_count,
+                })
+
+            # 按涨跌幅降序排列
+            sectors.sort(key=lambda x: x["change_pct"], reverse=True)
+            _cache.set(cache_key, sectors, ttl=120)  # 板块数据缓存2分钟
+            print(f"[Sector] 获取 {len(sectors)} 个行业板块")
+            return sectors
+
+        except Exception as e:
+            print(f"[Sector] 获取失败: {e}")
+            return []
+
+
 # ========== 全局单例 ==========
 
 _stock_data_service: Optional[StockDataService] = None

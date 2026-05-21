@@ -6,6 +6,7 @@ import App from './App.vue'
 import Home from './views/Home.vue'
 import Result from './views/Result.vue'
 import Compare from './views/Compare.vue'
+import SectorHeat from './views/SectorHeat.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -13,6 +14,7 @@ const router = createRouter({
     { path: '/', name: 'Home', component: Home },
     { path: '/result', name: 'Result', component: Result },
     { path: '/compare', name: 'Compare', component: Compare },
+    { path: '/sectors', name: 'SectorHeat', component: SectorHeat },
   ]
 })
 

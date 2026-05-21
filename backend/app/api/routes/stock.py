@@ -166,3 +166,22 @@ async def cache_clear():
         "success": True,
         "message": f"已清除 {count} 条缓存"
     }
+
+
+@router.get(
+    "/sectors",
+    summary="板块热度排行",
+    description="获取A股行业板块涨跌幅排行（同花顺数据）"
+)
+async def get_sectors():
+    """板块热度排行"""
+    try:
+        service = get_stock_data_service()
+        sectors = await service.get_sectors()
+        return {
+            "success": True,
+            "message": f"获取 {len(sectors)} 个板块",
+            "data": sectors
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取板块数据失败: {str(e)}")
