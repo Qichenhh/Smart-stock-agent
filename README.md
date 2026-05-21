@@ -4,13 +4,15 @@
 
 ## 功能特点
 
-- **多 Agent 协同**：技术面(价格/量/指标) → 基本面(PE/PB/ROE) → 情绪面(行情信号+新闻) → 综合报告
+- **多 Agent 协同**：技术面(价格/量/指标) → 基本面(PE/PB/ROE) → 情绪面(行情+新闻) → 综合报告
+- **实时分析进度**：WebSocket 推送每个 Agent 的执行状态（替代假进度条）
+- **新闻预警推送**：订阅股票后实时推送新闻，自动判断利好/利空及影响等级
+- **板块热度分析**：90 个行业板块涨跌幅排行、多空比、成交额
 - **实时数据**：baostock + akshare 双数据源自动降级，覆盖行情/K线/财务/新闻
 - **跨会话 Memory**：自动记录每次分析，下次查询时对比历史评分变化趋势
-- **金融知识库 RAG**：内置估值方法论、技术指标指南、投资原则，Agent 分析时检索参考
+- **金融知识库 RAG**：内置估值方法论、技术指标指南、投资原则
 - **多股票对比**：并排对比 2-5 只股票，LLM 排名 + 推荐
 - **ECharts K线图**：candlestick + 成交量双图，涨红跌绿
-- **新闻舆情**：东方财富个股新闻实时抓取，正负面情绪自动分类
 - **导出报告**：PNG / PDF 一键导出
 - **Docker 部署**：docker-compose up 一键启动
 
@@ -40,14 +42,15 @@ Smart-stock-analyst/
 │   │   ├── api/
 │   │   │   ├── main.py                  # FastAPI 应用
 │   │   │   └── routes/
-│   │   │       ├── stock.py             # 行情/搜索/K线/缓存端点
-│   │   │       ├── analysis.py          # 分析端点 (Agent 入口)
-│   │   │       └── compare.py           # 多股票对比端点
+│   │   │       ├── stock.py             # 行情/搜索/K线/缓存/板块
+│   │   │       ├── analysis.py          # Agent + WebSocket
+│   │   │       └── compare.py           # 多股票对比
 │   │   ├── services/
-│   │   │   ├── stock_data_service.py    # 双数据源 + 缓存 + 财务/新闻
+│   │   │   ├── stock_data_service.py    # 双数据源 + 缓存 + 板块
 │   │   │   ├── llm_service.py           # LLM 单例
 │   │   │   ├── memory_service.py        # Memory 服务
-│   │   │   └── rag_service.py           # RAG 知识库服务
+│   │   │   ├── rag_service.py           # RAG 知识库
+│   │   │   └── news_monitor.py          # 新闻监控预警
 │   │   ├── models/
 │   │   │   └── schemas.py               # Pydantic 数据模型
 │   │   └── config.py                    # pydantic-settings 配置
@@ -60,9 +63,10 @@ Smart-stock-analyst/
 ├── frontend/
 │   ├── src/
 │   │   ├── views/
-│   │   │   ├── Home.vue                 # 股票查询表单 + 多股票对比入口
-│   │   │   ├── Result.vue              # 分析报告 (K线+评分+情绪时间线)
-│   │   │   └── Compare.vue             # 多股票并排对比
+│   │   │   ├── Home.vue                 # 查询表单 + 新闻预警面板
+│   │   │   ├── Result.vue              # 分析报告 (K线+评分+情绪)
+│   │   │   ├── Compare.vue             # 多股票对比
+│   │   │   └── SectorHeat.vue          # 板块热度排行
 │   │   ├── services/api.ts             # Axios API 封装
 │   │   ├── types/index.ts              # TypeScript 类型
 │   │   ├── main.ts                     # Vue 入口 + 路由
@@ -125,10 +129,13 @@ docker compose up -d
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/stock/analyze` | 四 Agent 协同分析 |
+| WS | `/api/stock/ws/analyze` | 实时分析进度推送 |
+| WS | `/api/stock/ws/alerts` | 新闻预警推送 |
 | POST | `/api/stock/compare` | 多股票对比 (2-5只) |
 | GET | `/api/stock/quote/{symbol}` | 实时行情 |
 | GET | `/api/stock/history/{symbol}` | 历史K线 |
 | GET | `/api/stock/search?keyword=` | 股票搜索 |
+| GET | `/api/stock/sectors` | 板块热度排行 |
 | GET | `/api/stock/cache` | 缓存统计 |
 | POST | `/api/stock/cache/clear` | 清空缓存 |
 | GET | `/health` | 服务健康检查 |
@@ -136,7 +143,7 @@ docker compose up -d
 ## Agent 架构
 
 ```
-POST /api/stock/analyze
+POST /api/stock/analyze  (或 WebSocket ws/analyze 实时进度)
   │
   ├─ Agent 1 (技术面) → stock_quote + stock_history → MACD/RSI/KDJ/均线/成交量
   ├─ Agent 2 (基本面) → stock_quote + stock_financials → PE/PB/ROE/EPS/增长率
@@ -144,12 +151,16 @@ POST /api/stock/analyze
   │
   └─ Agent 4 (综合报告) → Memory检索 + RAG知识库 + 加权评分
        ├─ [TOOL_CALL:memory_search:query=000001历史分析]
-       ├─ [TOOL_CALL:rag_search:query=银行业估值,namespace=industry]
-       └─ → JSON 报告 (买入/持有/卖出 + 风险 + 建议)
-            → memory_record() 自动存入长期记忆
+       ├─ [TOOL_CALL:rag_search:query=银行业估值]
+       └─ → 结构化报告 → memory_record() 存入长期记忆
+
+实时功能:
+  ws/analyze  → WebSocket 推送每步进度 (替代假进度条)
+  ws/alerts   → WebSocket 新闻预警 (订阅+关键词分析+浏览器通知)
+  /sectors    → 板块涨跌幅排行 (同花顺90行业)
 ```
 
-每个 Agent 通过 `[TOOL_CALL:tool_name:param=value]` 协议调用工具，HelloAgents 框架自动拦截并执行。
+每个 Agent 通过 `[TOOL_CALL:tool_name:param=value]` 协议调用工具。
 
 ## 致谢
 
