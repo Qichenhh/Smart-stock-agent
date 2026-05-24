@@ -27,3 +27,5 @@ Thumbs.db
 .claude/
 memory_data/
 docs/
+memory_data/*.db
+qdrant_data/

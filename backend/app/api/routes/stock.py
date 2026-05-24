@@ -8,6 +8,9 @@ from ...models.schemas import (
     ErrorResponse,
 )
 from ...services.stock_data_service import get_stock_data_service, _cache
+from ...services import memory_service
+from ...services import rag_service
+from ...services.memory_service import add_watch, remove_watch, get_watchlist
 
 router = APIRouter(prefix="/stock", tags=["股票数据"])
 
@@ -185,3 +188,51 @@ async def get_sectors():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取板块数据失败: {str(e)}")
+
+
+@router.get("/memory/history", summary="分析历史")
+async def memory_history(symbol: str = ""):
+    """查看分析历史记录"""
+    try:
+        records = memory_service.get_history(symbol=symbol if symbol else None)
+        trends = {}
+        if symbol:
+            trends = memory_service.get_trend(symbol)
+        return {
+            "success": True,
+            "data": {"records": records, "trends": trends},
+            "preferences": memory_service.get_user_preferences(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/rag/search", summary="搜索知识库")
+async def rag_search(q: str = ""):
+    """搜索金融知识库"""
+    try:
+        results = rag_service.search(q)
+        return {
+            "success": True,
+            "query": q,
+            "data": {"results": results, "stats": rag_service.get_stats()}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memory/watchlist", summary="自选股列表")
+async def memory_watchlist():
+    return {"success": True, "data": get_watchlist()}
+
+
+@router.post("/memory/watchlist")
+async def memory_watchlist_add(symbol: str, name: str = "", reason: str = "", tags: str = ""):
+    add_watch(symbol, name, reason, tags)
+    return {"success": True, "message": f"已添加 {symbol}"}
+
+
+@router.delete("/memory/watchlist/{symbol}")
+async def memory_watchlist_remove(symbol: str):
+    remove_watch(symbol)
+    return {"success": True, "message": f"已移除 {symbol}"}

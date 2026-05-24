@@ -9,8 +9,8 @@ from hello_agents.tools import Tool, ToolParameter
 from hello_agents.tools.base import tool_action
 from ..services.llm_service import get_llm
 from ..services.stock_data_service import get_stock_data_service
-from ..services.memory_service import record_analysis, get_context
-from ..services.rag_service import get_rag_tool, search_knowledge, is_ready as rag_ready
+from ..services.memory_service import record_analysis, get_context, get_preferences_text
+from ..services.rag_service import search as rag_search, is_ready as rag_ready, memory_store, memory_search
 from ..models.schemas import (
     StockAnalysisRequest, AnalysisReport,
     TechnicalSection, FundamentalSection, SentimentSection,
@@ -328,9 +328,9 @@ class MultiAgentStockAnalyst:
             print("  - 创建股票数据工具...")
             self.stock_tool = StockDataTool()
 
-            # 初始化 RAG 服务（Memory 用轻量 JSON 文件，不需要初始化）
+            # 初始化 RAG 服务（TF-IDF 轻量检索，代码层注入）
             print("  - 初始化 RAG 知识库...")
-            self.rag_tool = get_rag_tool()
+            rag_ready()  # 触发延迟加载
 
             # Agent 1: 技术面（只用股票数据工具）
             print("  - 创建技术面分析Agent...")
@@ -366,11 +366,8 @@ class MultiAgentStockAnalyst:
                 llm=self.llm,
                 system_prompt=REPORT_AGENT_PROMPT
             )
-            if self.rag_tool:
-                self.report_agent.add_tool(self.rag_tool)
-
             tool_count = len(self.report_agent.list_tools())
-            rag_ok = "rag" if self.rag_tool else "no-rag"
+            rag_ok = "rag" if rag_ready() else "no-rag"
             print(f"[Agent] 多Agent系统初始化成功")
             print(f"   技术面Agent: {len(self.technical_agent.list_tools())} 个工具")
             print(f"   基本面Agent: {len(self.fundamental_agent.list_tools())} 个工具")
@@ -443,7 +440,21 @@ class MultiAgentStockAnalyst:
                 senti_score=report.sentiment_analysis.score,
                 rating=report.overall_rating
             )
-            print("[Memory] 分析结果已记录到长期记忆")
+            print("[Memory] 分析结果已记录到 SQLite")
+
+            # 存入语义记忆（Qdrant）
+            try:
+                memory_store(
+                    symbol=report.symbol,
+                    title=f"{report.symbol} {report.company_name} 分析报告",
+                    content=f"评级={report.overall_rating}. {report.summary}",
+                    summary=report.summary,
+                    rating=report.overall_rating,
+                    importance=0.7,
+                )
+                print("[Memory] 语义记忆已存储")
+            except Exception as e:
+                print(f"[Memory] 语义记忆存储失败(非关键): {e}")
 
             return report
 
@@ -489,9 +500,21 @@ class MultiAgentStockAnalyst:
         mem_context = get_context(request.symbol, limit=3)
 
         # 代码层检索 RAG 金融知识库
+        rag_context = ""
         if rag_ready():
-            industry_query = f"{request.symbol} 行业 估值 PE PB ROE"
-            rag_context = search_knowledge(industry_query, namespace="industry", limit=3, max_chars=600)
+            industry_query = f"{request.symbol} 行业 估值 PE PB ROE 技术指标"
+            rag_context = rag_search(industry_query, top_k=3, max_chars=600)
+
+        # 语义记忆检索（历史报告洞察）
+        semantic_context = ""
+        try:
+            semantic_context = memory_search(
+                request.symbol,
+                query=f"风险 趋势 变化 {request.free_text_input or ''}",
+                top_k=2, max_chars=500
+            )
+        except Exception:
+            pass
 
         # 构建 Memory 提示段
         mem_section = ""
@@ -505,7 +528,8 @@ class MultiAgentStockAnalyst:
 
         query = f"""请根据以下信息生成 {request.symbol} 的综合分析报告。
 
-{mem_section}{rag_section}
+{mem_section}{rag_section}{semantic_context}
+
 **技术面分析结果：**
 {tech}
 
